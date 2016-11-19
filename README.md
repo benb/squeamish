@@ -1,6 +1,6 @@
 ## Squeamish
 
-A minimal wrapper around the sqlite3 module to provide TypeScript and Promises (async/await) support.
+A minimal wrapper around the sqlite3 module to provide basic TypeScript and Promises (async/await) support.
 
 ## Usage
 
@@ -26,6 +26,8 @@ Example usage:
       });
     
       await statement.finalizeAsync();
+
+      await db.closeAsync();
     
       console.log("There were", numRows, "people");
     }
