@@ -1,6 +1,6 @@
 {
   "name": "squeamish",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Promisified SQLite bindings, for TypeScript and async/await.",
   "main": "dist/index.js",
   "typings": "dist/index",
