@@ -5,6 +5,7 @@ A minimal wrapper around the sqlite3 module to provide basic TypeScript and Prom
 ## Usage
 
 Promisification is done by Bluebird, so the API follows the standard sqlite3 module, with `Async` appended to method names and the final callback removed.
+Note that the Statement object you get from prepareAsync will also be promisified; the one from prepare() will not.
 
 Example usage:
     
