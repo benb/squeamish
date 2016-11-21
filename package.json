@@ -25,7 +25,9 @@
     "ava": "^0.16.0",
     "fs-extra-promise": "^0.4.1",
     "temp": "^0.8.3",
-    "typescript": "^2.0.3"
+    "typescript": "^2.0.3",
+    "highland": "^2.10.1",
+    "@types/highland": "^1.14.30"
   },
   "dependencies": {
     "@types/bluebird": "^3.0.35",

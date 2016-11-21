@@ -1,5 +1,6 @@
 import * as sqlite from 'sqlite3';
 import * as Bluebird from 'bluebird';
+import { Stream } from 'stream';
 
 export declare class Statement extends sqlite.Statement {
   public eachAsync(params: any, callback: (err: Error, row: any) => void): Promise<number>;
@@ -40,6 +41,8 @@ export declare class Database extends sqlite.Database {
   public prepareAsync(sql: string, params: any): Promise<Statement>;
   public prepareAsync(sql: string, ...params: any[]): Promise<Statement>;
   public prepareAsync(sql: string): Promise<Statement>;
+
+  public eachStream(sql: string, ...params: any[]): Stream;
 }
 
 export namespace SQLite{
@@ -54,6 +57,16 @@ export namespace SQLite{
 
   export function promisify(database: sqlite.Database): Database {
     const obj = Bluebird.promisifyAll(database) as any;
+
+    obj.eachStream = function (sql: string, ...params: any[]): Stream {
+      const pipe = new Stream.PassThrough({objectMode: true});
+      obj.eachAsync(sql, params, (err: Error, row: any) => {
+        pipe.push(row);
+      }).then(() => {
+        pipe.push(null);
+      });
+      return pipe;
+    }
 
     obj.prepareAsync = function(...args:any[]): Promise<Statement> {
       let stmt: sqlite.Statement;
