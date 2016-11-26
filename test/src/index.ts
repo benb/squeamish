@@ -11,13 +11,13 @@ async function generateArthurDatabase(): Promise<Database> {
 
   const t = await db.beginTransaction();
 
-  await db.execAsync(t, 'CREATE TABLE People (firstname TEXT, lastname TEXT);');
+  await t.execAsync('CREATE TABLE People (firstname TEXT, lastname TEXT);');
   await db.runAsync(t, 'INSERT INTO People VALUES ("Jeff", "Smith");');
-  await db.runAsync(t, 'INSERT INTO People VALUES (?, ?);', ["Bart", "Simpson"]);
-  await db.runAsync(t, 'INSERT INTO People VALUES (?, ?);', "Arthur", "Dent");
-  await db.runAsync(t, 'INSERT INTO People VALUES (?, ?);', "Arthur", "Smith");
-  await db.runAsync(t, 'INSERT INTO People VALUES (?, ?);', "Arthur", "Lowe");
-  await db.runAsync(t, 'INSERT INTO People VALUES ($firstname, $lastname);', {$firstname: "Bender", $lastname:"Rodríguez"});
+  await t.runAsync('INSERT INTO People VALUES (?, ?);', ["Bart", "Simpson"]);
+  await t.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Dent");
+  await t.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Smith");
+  await t.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Lowe");
+  await t.runAsync('INSERT INTO People VALUES ($firstname, $lastname);', {$firstname: "Bender", $lastname:"Rodríguez"});
 
   await db.commit(t);
 

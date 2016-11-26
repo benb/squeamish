@@ -1,5 +1,6 @@
 import * as sqlite from 'sqlite3';
 import * as Bluebird from 'bluebird';
+import * as uuid from 'uuid';
 import { Stream } from 'stream';
 import { Semaphore } from 'prex';
 
@@ -117,32 +118,82 @@ export class Transaction {
   semaphore: Semaphore;
   isOpen: boolean;
   database: Database;
+  savepoints: string[];
 
   constructor(database: Database, semaphore: Semaphore) {
     this.database = database;
     this.semaphore = semaphore;
     this.isOpen = false;
+    this.savepoints = [];
+  }
+
+  public execAsync(sql: string): Promise<void> {
+    return this.database.execAsync(this, sql);
+  }
+
+  public runAsync(sql: string, params: any): Promise<sqlite.Statement>;
+  public runAsync(sql: string, ...params: any[]): Promise<sqlite.Statement>;
+  public runAsync(sql: string): Promise<sqlite.Statement> {
+    const args = [this].concat(Array.from(arguments));
+    return this.database.runAsync.apply(this.database, args);
+  }
+
+  public allAsync(sql: string, ...params: any[]): Promise<any[]>;
+  public allAsync(sql: string, params: any): Promise<any[]>;
+  public allAsync(sql: string): Promise<any[]> {
+    const args = [this].concat(Array.from(arguments));
+    return this.database.allAsync.apply(this.database, args);
+  }
+
+  public getAsync(sql: string, params: any): Promise<any>;
+  public getAsync(sql: string, ...params: any[]): Promise<any>;
+  public getAsync(sql: string): Promise<any> {
+    const args = [this].concat(Array.from(arguments));
+    return this.database.getAsync.apply(this.database, args);
+  }
+
+
+  public eachAsync(sql: string, params: any, callback: (err: Error, row: any) => void): Promise<number>;
+  public eachAsync(sql: string, callback: (err: Error, row: any) => void): Promise<number>;
+  public eachAsync(...params: any[]): Promise<number> {
+    const args = [this].concat(Array.from(arguments));
+    return this.database.eachAsync.apply(this.database, args);
   }
 
   async begin(): Promise<Transaction> {
-    for (let i=0; i < transactionSemaphoreSize; i++) {
-      await this.semaphore.wait();
+    if (!this.isOpen) {
+      for (let i=0; i < transactionSemaphoreSize; i++) {
+        await this.semaphore.wait();
+      }
+      this.isOpen = true;
+      await this.database.execAsync(this, 'BEGIN TRANSACTION');
+      return this;
+    } else {
+      const savepoint = uuid.v4();
+      await this.database.execAsync(this, `SAVEPOINT '${savepoint}'`);
+      this.savepoints.push(savepoint);
+      return this;
     }
-    this.isOpen = true;
-    await this.database.execAsync(this, 'BEGIN TRANSACTION');
-    return this;
   } 
 
   async commit() {
-    await this.database.execAsync(this, 'COMMIT');
-    this.isOpen = false;
-    await this.semaphore.release(transactionSemaphoreSize);
+    if (this.savepoints.length > 0) {
+      await this.database.execAsync(this, `RELEASE '${this.savepoints.pop()}'`);
+    } else {
+      await this.database.execAsync(this, 'COMMIT');
+      this.isOpen = false;
+      await this.semaphore.release(transactionSemaphoreSize);
+    }
   }
 
   async rollback() {
-    await this.database.execAsync(this, 'ROLLBACK');
-    this.isOpen = false;
-    await this.semaphore.release(transactionSemaphoreSize);
+    if (this.savepoints.length > 0) {
+      await this.database.execAsync(this, `ROLLBACK TO '${this.savepoints.pop()}'`);
+    } else {
+      await this.database.execAsync(this, 'ROLLBACK');
+      this.isOpen = false;
+      await this.semaphore.release(transactionSemaphoreSize);
+    }
   }
 }
 
