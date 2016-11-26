@@ -9,16 +9,38 @@ temp.track();
 async function generateArthurDatabase(): Promise<Database> {
   const db = await SQLite.open(':memory:');
 
-  await db.execAsync('CREATE TABLE People (firstname TEXT, lastname TEXT);');
-  await db.runAsync('INSERT INTO People VALUES ("Jeff", "Smith");');
-  await db.runAsync('INSERT INTO People VALUES (?, ?);', ["Bart", "Simpson"]);
-  await db.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Dent");
-  await db.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Smith");
-  await db.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Lowe");
-  await db.runAsync('INSERT INTO People VALUES ($firstname, $lastname);', {$firstname: "Bender", $lastname:"Rodríguez"});
+  const t = await db.beginTransaction();
+
+  await db.execAsync(t, 'CREATE TABLE People (firstname TEXT, lastname TEXT);');
+  await db.runAsync(t, 'INSERT INTO People VALUES ("Jeff", "Smith");');
+  await db.runAsync(t, 'INSERT INTO People VALUES (?, ?);', ["Bart", "Simpson"]);
+  await db.runAsync(t, 'INSERT INTO People VALUES (?, ?);', "Arthur", "Dent");
+  await db.runAsync(t, 'INSERT INTO People VALUES (?, ?);', "Arthur", "Smith");
+  await db.runAsync(t, 'INSERT INTO People VALUES (?, ?);', "Arthur", "Lowe");
+  await db.runAsync(t, 'INSERT INTO People VALUES ($firstname, $lastname);', {$firstname: "Bender", $lastname:"Rodríguez"});
+
+  await db.commit(t);
 
   return db;
 }
+
+test('transactions', async (t) => {
+  const db = await generateArthurDatabase();
+  const transaction = await db.beginTransaction();
+
+  await db.runAsync(transaction, `UPDATE People SET firstname = 'Jef' WHERE lastname = 'Smith'`);
+
+  const p = db.runAsync(`UPDATE People SET firstname = 'Geoff' WHERE lastname = 'Smith'`);
+
+  const shouldBeJef = await db.allAsync(transaction, `SELECT * from People WHERE lastname = 'Smith'`);
+  t.is(shouldBeJef[0].firstname, 'Jef');
+
+  await db.commit(transaction);
+  await p;
+
+  const shouldBeGeoff = await db.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
+  t.is(shouldBeGeoff[0].firstname, 'Geoff');
+});
 
 test('basic open and read/write', async (t) => {
   const db = await generateArthurDatabase();
