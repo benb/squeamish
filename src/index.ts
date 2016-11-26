@@ -111,6 +111,8 @@ function transactionise(semaphore: Semaphore, obj: any, names: string[]) {
   }
 }
 
+const transactionSemaphoreSize = 10;
+
 export class Transaction {
   semaphore: Semaphore;
   isOpen: boolean;
@@ -123,7 +125,9 @@ export class Transaction {
   }
 
   async begin(): Promise<Transaction> {
-    await this.semaphore.wait();
+    for (let i=0; i < transactionSemaphoreSize; i++) {
+      await this.semaphore.wait();
+    }
     this.isOpen = true;
     await this.database.execAsync(this, 'BEGIN TRANSACTION');
     return this;
@@ -131,14 +135,14 @@ export class Transaction {
 
   async commit() {
     await this.database.execAsync(this, 'COMMIT');
-    await this.semaphore.release();
     this.isOpen = false;
+    await this.semaphore.release(transactionSemaphoreSize);
   }
 
   async rollback() {
     await this.database.execAsync(this, 'ROLLBACK');
     this.isOpen = false;
-    await this.semaphore.release();
+    await this.semaphore.release(transactionSemaphoreSize);
   }
 }
 
@@ -154,7 +158,7 @@ export namespace SQLite{
   }
 
   function promisify(database: sqlite.Database, shouldSerialize:boolean): Database {
-    const semaphore = new Semaphore(1);
+    const semaphore = new Semaphore(transactionSemaphoreSize, transactionSemaphoreSize);
     const obj = Bluebird.promisifyAll(database) as any;
     if (shouldSerialize) {
 
