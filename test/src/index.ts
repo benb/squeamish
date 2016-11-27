@@ -12,14 +12,14 @@ async function generateArthurDatabase(): Promise<Database> {
   const t = await db.beginTransaction();
 
   await t.execAsync('CREATE TABLE People (firstname TEXT, lastname TEXT);');
-  await db.runAsync(t, 'INSERT INTO People VALUES ("Jeff", "Smith");');
+  await t.runAsync('INSERT INTO People VALUES ("Jeff", "Smith");');
   await t.runAsync('INSERT INTO People VALUES (?, ?);', ["Bart", "Simpson"]);
   await t.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Dent");
   await t.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Smith");
   await t.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Lowe");
   await t.runAsync('INSERT INTO People VALUES ($firstname, $lastname);', {$firstname: "Bender", $lastname:"Rodríguez"});
 
-  await db.commit(t);
+  await t.commit();
 
   return db;
 }
@@ -28,19 +28,45 @@ test('transactions', async (t) => {
   const db = await generateArthurDatabase();
   const transaction = await db.beginTransaction();
 
-  await db.runAsync(transaction, `UPDATE People SET firstname = 'Jef' WHERE lastname = 'Smith'`);
+  await transaction.runAsync(`UPDATE People SET firstname = 'Jef' WHERE lastname = 'Smith'`);
 
   const p = db.runAsync(`UPDATE People SET firstname = 'Geoff' WHERE lastname = 'Smith'`);
 
-  const shouldBeJef = await db.allAsync(transaction, `SELECT * from People WHERE lastname = 'Smith'`);
+  const shouldBeJef = await transaction.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
   t.is(shouldBeJef[0].firstname, 'Jef');
 
-  await db.commit(transaction);
+  await transaction.commit();
   await p;
 
   const shouldBeGeoff = await db.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
   t.is(shouldBeGeoff[0].firstname, 'Geoff');
 });
+
+test('nested transactions', async (t) => {
+  const db = await generateArthurDatabase();
+  const t1 = await db.beginTransaction();
+
+  await t1.runAsync(`UPDATE People SET firstname = 'Jef' WHERE lastname = 'Smith'`);
+  const shouldBeJef = await t1.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
+  t.is(shouldBeJef[0].firstname, 'Jef');
+
+  const t2 = await t1.beginNew();
+
+  await t2.runAsync(`UPDATE People SET firstname = 'Geoff' WHERE lastname = 'Smith'`);
+
+  //execute this in background for when t1 is finished
+  t1.runAsync(`UPDATE People SET firstname = 'Jeff' WHERE lastname = 'Smith'`);
+
+  const shouldBeGeoff = await t2.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
+  t.is(shouldBeGeoff[0].firstname, 'Geoff');
+
+  await t2.commit();
+  await t1.commit();
+
+  const shouldBeJeff = await t1.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
+  t.is(shouldBeJeff[0].firstname, 'Jeff');
+});
+
 
 test('basic open and read/write', async (t) => {
   const db = await generateArthurDatabase();

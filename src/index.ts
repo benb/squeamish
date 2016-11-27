@@ -18,16 +18,6 @@ export declare class Statement extends sqlite.Statement {
 
   public getAsync(params?: any): Promise<any>;
 
-  public eachAsync(t: Transaction, params: any, callback: (err: Error, row: any) => void): Promise<number>;
-  public eachAsync(t: Transaction, callback?: (err: Error, row: any) => void): Promise<number>;
-
-  public resetAsync(t: Transaction, ): Promise<void>;
-
-  public finalizeAsync(t: Transaction, ): Promise<void>;
-
-  public runAsync(t: Transaction, params?: any): Promise<Statement>;
-
-  public getAsync(t: Transaction, params?: any): Promise<any>;
 }
 
 export declare class Database extends sqlite.Database {
@@ -59,31 +49,7 @@ export declare class Database extends sqlite.Database {
 
   public execAsync(t: Transaction, sql: string): Promise<void>;
 
-  public runAsync(t: Transaction, sql: string): Promise<sqlite.Statement>;
-  public runAsync(t: Transaction, sql: string, ...params: any[]): Promise<sqlite.Statement>;
-  public runAsync(t: Transaction, sql: string, params: any): Promise<sqlite.Statement>;
-
-  public allAsync(t: Transaction, sql: string): Promise<any[]>;
-  public allAsync(t: Transaction, sql: string, ...params: any[]): Promise<any[]>;
-  public allAsync(t: Transaction, sql: string, params: any): Promise<any[]>;
-
-  public getAsync(t: Transaction, sql: string, params: any): Promise<any>;
-  public getAsync(t: Transaction, sql: string, ...params: any[]): Promise<any>;
-  public getAsync(t: Transaction, sql: string): Promise<any>;
-
-  public eachAsync(t: Transaction, sql: string, params: any, callback: (err: Error, row: any) => void): Promise<number>;
-  public eachAsync(t: Transaction, sql: string, callback: (err: Error, row: any) => void): Promise<number>;
-  public eachAsync(t: Transaction, ...params: any[]): Promise<number>;
-
-  public prepareAsync(t: Transaction, sql: string, params: any): Promise<Statement>;
-  public prepareAsync(t: Transaction, sql: string, ...params: any[]): Promise<Statement>;
-  public prepareAsync(t: Transaction, sql: string): Promise<Statement>;
-
-  public eachStream(t: Transaction, sql: string, ...params: any[]): Stream;
-
   public beginTransaction(): Promise<Transaction>;
-  public commit(t: Transaction): Promise<void>;
-  public rollback(t: Transaction): Promise<void>;
 }
 
 function transactionise(semaphore: Semaphore, obj: any, names: string[]) {
@@ -112,89 +78,109 @@ function transactionise(semaphore: Semaphore, obj: any, names: string[]) {
   }
 }
 
-const transactionSemaphoreSize = 10;
-
 export class Transaction {
-  semaphore: Semaphore;
+  externalSemaphore: Semaphore;
+  internalSemaphore: Semaphore;
   isOpen: boolean;
   database: Database;
-  savepoints: string[];
+  savepoint?: string;
 
   constructor(database: Database, semaphore: Semaphore) {
     this.database = database;
-    this.semaphore = semaphore;
+    this.externalSemaphore = semaphore;
+    this.internalSemaphore = new Semaphore(1);
     this.isOpen = false;
-    this.savepoints = [];
   }
 
-  public execAsync(sql: string): Promise<void> {
-    return this.database.execAsync(this, sql);
+  static begin(database: Database, semaphore: Semaphore): Promise<Transaction> {
+    const t = new Transaction(database, semaphore);
+    return t.begin();
+  }
+
+  private async begin(): Promise<Transaction> {
+    if (this.isOpen) {
+      throw new Error("Transaction already begun");
+    }
+    await this.externalSemaphore.wait();
+    this.isOpen = true;
+    this.savepoint = uuid.v4();
+    await this.database.execAsync(this, `SAVEPOINT '${this.savepoint}'`);
+    return this;
+  }
+
+  async beginNew(): Promise<Transaction> {
+    const internalTransaction = new Transaction(this.database, this.internalSemaphore);
+    return internalTransaction.begin();
+  } 
+
+  async commit() {
+    await this.database.execAsync(this, `RELEASE '${this.savepoint}'`);
+    await this.externalSemaphore.release();
+  }
+
+  async rollback() {
+    await this.database.execAsync(this, `ROLLBACK TO '${this.savepoint}'`);
+    await this.externalSemaphore.release();
+  }
+
+  public async execAsync(sql: string): Promise<void> {
+    await this.internalSemaphore.wait();
+    try {
+      return this.database.execAsync(this, sql);
+    } finally {
+      await this.internalSemaphore.release();
+    }
   }
 
   public runAsync(sql: string, params: any): Promise<sqlite.Statement>;
   public runAsync(sql: string, ...params: any[]): Promise<sqlite.Statement>;
-  public runAsync(sql: string): Promise<sqlite.Statement> {
-    const args = [this].concat(Array.from(arguments));
-    return this.database.runAsync.apply(this.database, args);
+  public async runAsync(sql: string): Promise<sqlite.Statement> {
+    await this.internalSemaphore.wait();
+    try {
+      const args = [this].concat(Array.from(arguments));
+      return this.database.runAsync.apply(this.database, args);
+    } finally {
+      await this.internalSemaphore.release();
+    }
   }
 
   public allAsync(sql: string, ...params: any[]): Promise<any[]>;
   public allAsync(sql: string, params: any): Promise<any[]>;
-  public allAsync(sql: string): Promise<any[]> {
-    const args = [this].concat(Array.from(arguments));
-    return this.database.allAsync.apply(this.database, args);
+  public async allAsync(sql: string): Promise<any[]> {
+    await this.internalSemaphore.wait();
+    try {
+      const args = [this].concat(Array.from(arguments));
+      return this.database.allAsync.apply(this.database, args);
+    } finally {
+      await this.internalSemaphore.release();
+    }
   }
 
   public getAsync(sql: string, params: any): Promise<any>;
   public getAsync(sql: string, ...params: any[]): Promise<any>;
-  public getAsync(sql: string): Promise<any> {
-    const args = [this].concat(Array.from(arguments));
-    return this.database.getAsync.apply(this.database, args);
+  public async getAsync(sql: string): Promise<any> {
+    await this.internalSemaphore.wait();
+    try {
+      const args = [this].concat(Array.from(arguments));
+      return this.database.getAsync.apply(this.database, args);
+    } finally {
+      await this.internalSemaphore.release();
+    }
   }
 
 
   public eachAsync(sql: string, params: any, callback: (err: Error, row: any) => void): Promise<number>;
   public eachAsync(sql: string, callback: (err: Error, row: any) => void): Promise<number>;
-  public eachAsync(...params: any[]): Promise<number> {
-    const args = [this].concat(Array.from(arguments));
-    return this.database.eachAsync.apply(this.database, args);
-  }
-
-  async begin(): Promise<Transaction> {
-    if (!this.isOpen) {
-      for (let i=0; i < transactionSemaphoreSize; i++) {
-        await this.semaphore.wait();
-      }
-      this.isOpen = true;
-      await this.database.execAsync(this, 'BEGIN TRANSACTION');
-      return this;
-    } else {
-      const savepoint = uuid.v4();
-      await this.database.execAsync(this, `SAVEPOINT '${savepoint}'`);
-      this.savepoints.push(savepoint);
-      return this;
-    }
-  } 
-
-  async commit() {
-    if (this.savepoints.length > 0) {
-      await this.database.execAsync(this, `RELEASE '${this.savepoints.pop()}'`);
-    } else {
-      await this.database.execAsync(this, 'COMMIT');
-      this.isOpen = false;
-      await this.semaphore.release(transactionSemaphoreSize);
+  public async eachAsync(...params: any[]): Promise<number> {
+    await this.internalSemaphore.wait();
+    try {
+      const args = [this].concat(Array.from(arguments));
+      return this.database.eachAsync.apply(this.database, args);
+    } finally {
+      await this.internalSemaphore.release();
     }
   }
 
-  async rollback() {
-    if (this.savepoints.length > 0) {
-      await this.database.execAsync(this, `ROLLBACK TO '${this.savepoints.pop()}'`);
-    } else {
-      await this.database.execAsync(this, 'ROLLBACK');
-      this.isOpen = false;
-      await this.semaphore.release(transactionSemaphoreSize);
-    }
-  }
 }
 
 export namespace SQLite{
@@ -209,16 +195,14 @@ export namespace SQLite{
   }
 
   function promisify(database: sqlite.Database, shouldSerialize:boolean): Database {
-    const semaphore = new Semaphore(transactionSemaphoreSize, transactionSemaphoreSize);
+    const semaphore = new Semaphore(1);
     const obj = Bluebird.promisifyAll(database) as any;
     if (shouldSerialize) {
 
       obj.rollback = (t: Transaction) => {return t.rollback()};
       obj.commit = (t: Transaction) => {return t.commit()};
       obj.beginTransaction = () => {
-        const t = new Transaction(obj, semaphore);
-        t.semaphore = semaphore;
-        return t.begin();
+        return Transaction.begin(obj, semaphore);
       }
 
       transactionise(semaphore, obj, ["run", "close", "exec", "each", "all", "get"]);
