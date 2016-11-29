@@ -1,4 +1,4 @@
-import { SQLite, Database } from '../../';
+import { SQLite, Database, TransactionOptions } from '../../';
 import temp = require('temp');
 import { test } from 'ava';
 import * as path from 'path';
@@ -24,47 +24,54 @@ async function generateArthurDatabase(): Promise<Database> {
   return db;
 }
 
+const transactionOptions:(TransactionOptions | undefined)[] = [{type: "IMMEDIATE"}, {type: "DEFERRED"}, {type: "EXCLUSIVE"}, undefined];
+
 test('transactions', async (t) => {
-  const db = await generateArthurDatabase();
-  const transaction = await db.beginTransaction();
+  for (let typeOpts of transactionOptions) {
 
-  await transaction.runAsync(`UPDATE People SET firstname = 'Jef' WHERE lastname = 'Smith'`);
+    const db = await generateArthurDatabase();
+    const transaction = await db.beginTransaction(typeOpts);
 
-  const p = db.runAsync(`UPDATE People SET firstname = 'Geoff' WHERE lastname = 'Smith'`);
+    await transaction.runAsync(`UPDATE People SET firstname = 'Jef' WHERE lastname = 'Smith'`);
 
-  const shouldBeJef = await transaction.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
-  t.is(shouldBeJef[0].firstname, 'Jef');
+    const p = db.runAsync(`UPDATE People SET firstname = 'Geoff' WHERE lastname = 'Smith'`);
 
-  await transaction.commit();
-  await p;
+    const shouldBeJef = await transaction.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
+    t.is(shouldBeJef[0].firstname, 'Jef');
 
-  const shouldBeGeoff = await db.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
-  t.is(shouldBeGeoff[0].firstname, 'Geoff');
+    await transaction.commit();
+    await p;
+
+    const shouldBeGeoff = await db.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
+    t.is(shouldBeGeoff[0].firstname, 'Geoff');
+  }
 });
 
 test('nested transactions', async (t) => {
-  const db = await generateArthurDatabase();
-  const t1 = await db.beginTransaction();
+  for (let typeOpts of transactionOptions) {
+    const db = await generateArthurDatabase();
+    const t1 = await db.beginTransaction(typeOpts);
 
-  await t1.runAsync(`UPDATE People SET firstname = 'Jef' WHERE lastname = 'Smith'`);
-  const shouldBeJef = await t1.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
-  t.is(shouldBeJef[0].firstname, 'Jef');
+    await t1.runAsync(`UPDATE People SET firstname = 'Jef' WHERE lastname = 'Smith'`);
+    const shouldBeJef = await t1.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
+    t.is(shouldBeJef[0].firstname, 'Jef');
 
-  const t2 = await t1.beginNew();
+    const t2 = await t1.beginNew();
 
-  await t2.runAsync(`UPDATE People SET firstname = 'Geoff' WHERE lastname = 'Smith'`);
+    await t2.runAsync(`UPDATE People SET firstname = 'Geoff' WHERE lastname = 'Smith'`);
 
-  //execute this in background for when t1 is finished
-  t1.runAsync(`UPDATE People SET firstname = 'Jeff' WHERE lastname = 'Smith'`);
+    //execute this in background for when t1 is finished
+    t1.runAsync(`UPDATE People SET firstname = 'Jeff' WHERE lastname = 'Smith'`);
 
-  const shouldBeGeoff = await t2.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
-  t.is(shouldBeGeoff[0].firstname, 'Geoff');
+    const shouldBeGeoff = await t2.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
+    t.is(shouldBeGeoff[0].firstname, 'Geoff');
 
-  await t2.commit();
-  await t1.commit();
+    await t2.commit();
+    await t1.commit();
 
-  const shouldBeJeff = await t1.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
-  t.is(shouldBeJeff[0].firstname, 'Jeff');
+    const shouldBeJeff = await t1.allAsync(`SELECT * from People WHERE lastname = 'Smith'`);
+    t.is(shouldBeJeff[0].firstname, 'Jeff');
+  }
 });
 
 

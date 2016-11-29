@@ -49,8 +49,10 @@ export declare class Database extends sqlite.Database {
 
   public execAsync(t: Transaction, sql: string): Promise<void>;
 
-  public beginTransaction(): Promise<Transaction>;
+  public beginTransaction(options?: TransactionOptions): Promise<Transaction>;
 }
+
+export type TransactionOptions = {type: "IMMEDIATE" | "DEFERRED" | "EXCLUSIVE" };
 
 function transactionise(semaphore: Semaphore, obj: any, names: string[]) {
   for (let name of names) {
@@ -81,19 +83,21 @@ function transactionise(semaphore: Semaphore, obj: any, names: string[]) {
 export class Transaction {
   externalSemaphore: Semaphore;
   internalSemaphore: Semaphore;
+  options?: TransactionOptions;
   isOpen: boolean;
   database: Database;
   savepoint?: string;
 
-  constructor(database: Database, semaphore: Semaphore) {
+  constructor(database: Database, semaphore: Semaphore, options?: TransactionOptions) {
     this.database = database;
     this.externalSemaphore = semaphore;
     this.internalSemaphore = new Semaphore(1);
     this.isOpen = false;
+    this.options = options;
   }
 
-  static begin(database: Database, semaphore: Semaphore): Promise<Transaction> {
-    const t = new Transaction(database, semaphore);
+  static begin(database: Database, semaphore: Semaphore, options?: TransactionOptions): Promise<Transaction> {
+    const t = new Transaction(database, semaphore, options);
     return t.begin();
   }
 
@@ -104,7 +108,11 @@ export class Transaction {
     await this.externalSemaphore.wait();
     this.isOpen = true;
     this.savepoint = uuid.v4();
-    await this.database.execAsync(this, `SAVEPOINT '${this.savepoint}'`);
+    if (this.options) {
+      await this.database.execAsync(this, `BEGIN ${this.options.type} TRANSACTION`);
+    } else {
+      await this.database.execAsync(this, `SAVEPOINT '${this.savepoint}'`);
+    }
     return this;
   }
 
@@ -114,12 +122,20 @@ export class Transaction {
   } 
 
   async commit() {
-    await this.database.execAsync(this, `RELEASE '${this.savepoint}'`);
+    if (this.options) {
+      await this.database.execAsync(this, `COMMIT`);
+    } else {
+      await this.database.execAsync(this, `RELEASE '${this.savepoint}'`);
+    }
     await this.externalSemaphore.release();
   }
 
   async rollback() {
-    await this.database.execAsync(this, `ROLLBACK TO '${this.savepoint}'`);
+    if (this.options) {
+      await this.database.execAsync(this, `ROLLBACK`);
+    } else {
+      await this.database.execAsync(this, `ROLLBACK TO '${this.savepoint}'`);
+    }
     await this.externalSemaphore.release();
   }
 
@@ -201,8 +217,8 @@ export namespace SQLite{
 
       obj.rollback = (t: Transaction) => {return t.rollback()};
       obj.commit = (t: Transaction) => {return t.commit()};
-      obj.beginTransaction = () => {
-        return Transaction.begin(obj, semaphore);
+      obj.beginTransaction = (options?: TransactionOptions) => {
+        return Transaction.begin(obj, semaphore, options);
       }
 
       transactionise(semaphore, obj, ["run", "close", "exec", "each", "all", "get"]);
