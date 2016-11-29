@@ -77,13 +77,8 @@ test('nested transactions', async (t) => {
 
 test('basic open and read/write', async (t) => {
   const db = await generateArthurDatabase();
-  try {
-    const rows = await db.allAsync('SELECT * from People;');
-    t.is(rows.length, 6, "Six rows");
-  } catch (error) {
-    console.log(error);
-    t.fail(error);
-  }
+  const rows = await db.allAsync('SELECT * from People;');
+  t.is(rows.length, 6, "Six rows");
 });
 
 test('stream', async (t) => {
@@ -123,21 +118,29 @@ test('eachAsync', async (t) => {
   const db = await generateArthurDatabase();
   const numRows = 6;
 
+  t.plan(numRows * 2 + 1);
+
+  const names = ["Jeff", "Bart", "Arthur", "Arthur", "Arthur", "Bender"];
+
+  const num = await db.eachAsync('SELECT * from People;', (err, row) => {
+    t.is(err, null, "No error");
+    t.is(row.firstname, names.shift(), "Row exists");
+  });
+
+  t.is(num, numRows, "Three rows");
+});
+
+test('errors', async (t) => {
+  const db = await SQLite.open(':memory:');
+  t.plan(2);
+
   try {
-    t.plan(numRows * 2 + 1);
-
-    const names = ["Jeff", "Bart", "Arthur", "Arthur", "Arthur", "Bender"];
-
-    const num = await db.eachAsync('SELECT * from People;', (err, row) => {
-      t.is(err, null, "No error");
-      t.is(row.firstname, names.shift(), "Row exists");
-    });
-
-    t.is(num, numRows, "Three rows");
+    await db.runAsync('INSERT INTO NoTable VALUES ("Jeff", "Smith");');
   } catch (error) {
-    console.log(error);
-    t.fail(error);
+    t.truthy(true);
   }
+
+  t.throws(db.runAsync('INSERT INTO NoTable VALUES ("Jeff", "Smith");'));
 });
 
 test('preparedStatements', async (t) => {
@@ -149,22 +152,17 @@ test('preparedStatements', async (t) => {
   await db.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Dent");
   await db.runAsync('INSERT INTO People VALUES ($firstname, $lastname);', {$firstname: "Bender", $lastname:"Rodríguez"});
 
-  try {
-    t.plan(3);
+  t.plan(3);
 
-    const names = ["Jeff", "Bart", "Arthur", "Bender"];
+  const names = ["Jeff", "Bart", "Arthur", "Bender"];
 
-    const statement = await db.prepareAsync('SELECT * from People WHERE lastname = ?');
+  const statement = await db.prepareAsync('SELECT * from People WHERE lastname = ?');
 
-    const num = await statement.eachAsync('Rodríguez', (err, row) => {
-      t.is(err, null, "No error");
-      t.is(row.lastname, 'Rodríguez', "Row exists");
-    });
+  const num = await statement.eachAsync('Rodríguez', (err, row) => {
+    t.is(err, null, "No error");
+    t.is(row.lastname, 'Rodríguez', "Row exists");
+  });
 
-    t.is(num, 1, "Retrieved one row");
-  } catch (error) {
-    console.log(error);
-    t.fail(error);
-  }
+  t.is(num, 1, "Retrieved one row");
 });
 

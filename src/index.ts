@@ -58,27 +58,24 @@ function transactionise(semaphore: Semaphore, obj: any, names: string[]) {
   for (let name of names) {
     const oldF = obj[name + "Async"].bind(obj);
     obj[name + "Async"] = async function(...params: any[]) {
-      return new Promise( async (resolve, reject) => {
-        if (params[0] instanceof Transaction) {
-          const t = params.shift();
-          if (!t.isOpen) {
-            throw new Error("Transaction is closed");
-          }
-          resolve(oldF(...params));
-        } else {
-          try {
-            await semaphore.wait();
-            const result = await oldF(...params); 
-            await semaphore.release();
-            resolve(result);
-          } catch (error) {
-            reject(error);
-          }
+      if (params[0] instanceof Transaction) {
+        const t:Transaction = params.shift();
+        if (!t.isOpen) {
+          throw new Error("Transaction is closed");
         }
-      });
+        if (name == "run" && params.length == 1) {
+          params.push([]);
+        }
+        return oldF(...params);
+      } else {
+        await semaphore.wait();
+          return oldF(...params)
+            .then((x:any) => {semaphore.release(); return x;},
+                  (error:any) => {semaphore.release(); throw error});
+        }
+      }
     }
   }
-}
 
 export class Transaction {
   externalSemaphore: Semaphore;
