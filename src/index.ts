@@ -1,8 +1,8 @@
 import * as sqlite from 'sqlite3';
 import * as Bluebird from 'bluebird';
 import * as uuid from 'uuid';
-import { Stream } from 'stream';
 import { Semaphore } from 'prex';
+import { Observable, Observer } from '@reactivex/rxjs';
 
 export declare class Statement extends sqlite.Statement {
   public bindAsync(params: any): Promise<void>;
@@ -26,6 +26,7 @@ export interface Handle {
     getAsync: (sql: string, ...params: any[]) => Promise<any>;
     eachAsync: (sql: string, ...params: any[]) => Promise<number>;
     execAsync: (sql: string, ...params: any[]) => Promise<any>;
+    select(sql: string, ...params: any[]): Observable<any>;
     beginTransaction(options?: TransactionOptions): Promise<Transaction>;
 }
 
@@ -42,12 +43,16 @@ function withinLock<T>(f:() => Promise<T>, semaphore: Semaphore): Promise<T> {
   });
 }
 
+function observableWithinLock<T>(obs: Observable<T>, semaphore: Semaphore) {
+  obs.do({complete: () => {this.semaphore.release()}});
+  return Observable.from(this.semaphore.wait()).concat(obs).skip(1);
+}
+
 function lockF<T>( f:() => ((sql: string, ...params: any[]) => Promise<T>), semaphore: {semaphore: Semaphore}) {
   return (sql: string, ...params: any[]) => {
     return withinLock(() => f()(sql, ...params), semaphore.semaphore);
   };
 }
-
 
 export class Database implements Handle {
   sqlite: sqlite.Database;
@@ -78,6 +83,21 @@ export class Database implements Handle {
         }]);
       });
     };
+  }
+
+  _select(sql: string, ...params: any[]) {
+    return Observable.create((observer: Observer<any>) =>  {
+      const f = (e: Error, r: any) => {
+        if (e){observer.error(e)}
+        else {observer.next(r)}
+      };
+      this.eachAsync(sql, f, params)
+          .then(n => observer.complete());
+    });
+  }
+
+  select(sql: string, ...params: any[]) {
+    return observableWithinLock(this._select(sql, ...params), this.semaphore);
   }
 
   public closeAsync():Promise<void> {
@@ -198,11 +218,15 @@ export class Transaction implements Handle {
     }
     await this.externalSemaphore.release();
   }
+
   runAsync: (sql: string, ...params: any[]) => Promise<sqlite.Statement>;
   allAsync: (sql: string, ...params: any[]) => Promise<any[]>;
   getAsync: (sql: string, ...params: any[]) => Promise<any[]>;
   eachAsync: (sql: string, ...params: any[]) => Promise<number>;
   execAsync: (sql: string, ...params: any[]) => Promise<any>;
 
+  select(sql: string, ...params: any[]) {
+    return observableWithinLock(this.database._select(sql, ...params), this.semaphore);
+  }
 }
 

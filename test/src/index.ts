@@ -123,7 +123,6 @@ test('eachAsync', async (t) => {
   const names = ["Jeff", "Bart", "Arthur", "Arthur", "Arthur", "Bender"];
 
   const num = await db.eachAsync('SELECT * from People;', (err:Error, row:any) => {
-    console.log("ROW", row);
     t.is(err, null, "No error");
     t.is(row.firstname, names.shift(), "Row exists");
   });
