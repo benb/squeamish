@@ -54,6 +54,10 @@ export declare class Database extends sqlite.Database {
 
 export type TransactionOptions = {type: "IMMEDIATE" | "DEFERRED" | "EXCLUSIVE" };
 
+function createSemaphore() {
+  return new Semaphore(1);
+}
+
 function transactionise(semaphore: Semaphore, obj: any, names: string[]) {
   for (let name of names) {
     const oldF = obj[name + "Async"].bind(obj);
@@ -88,7 +92,7 @@ export class Transaction {
   constructor(database: Database, semaphore: Semaphore, options?: TransactionOptions) {
     this.database = database;
     this.externalSemaphore = semaphore;
-    this.internalSemaphore = new Semaphore(1);
+    this.internalSemaphore = createSemaphore();
     this.isOpen = false;
     this.options = options;
   }
@@ -99,23 +103,37 @@ export class Transaction {
   }
 
   private async begin(): Promise<Transaction> {
+    console.log("OPENING");
     if (this.isOpen) {
       throw new Error("Transaction already begun");
     }
+    console.log("AWAITING");
     await this.externalSemaphore.wait();
-    this.isOpen = true;
+    console.log("AWAITED");
     this.savepoint = uuid.v4();
     if (this.options) {
-      await this.database.execAsync(this, `BEGIN ${this.options.type} TRANSACTION`);
+      await new Promise( (res, rej) => {
+        const type = this.options ? this.options.type : "DEFERRED";
+        this.database.exec(`BEGIN ${type} TRANSACTION`, (err?: Error) => {
+          if (err) {rej(err);} else {res();}
+        });
+      });
     } else {
-      await this.database.execAsync(this, `SAVEPOINT '${this.savepoint}'`);
+      await new Promise( (res, rej) => {
+        this.database.exec(`SAVEPOINT "${this.savepoint}"`, (err?: Error) => {
+          if (err) {rej(err);} else {res();}
+        });
+      });
     }
+    this.isOpen = true;
+    console.log("OPEN");
     return this;
   }
 
   async beginNew(): Promise<Transaction> {
     const internalTransaction = new Transaction(this.database, this.internalSemaphore);
-    return internalTransaction.begin();
+    const t = await internalTransaction.begin();
+    return t;
   } 
 
   async commit() {
@@ -208,8 +226,9 @@ export namespace SQLite{
   }
 
   function promisify(database: sqlite.Database, shouldSerialize:boolean): Database {
-    const semaphore = new Semaphore(1);
+    const semaphore = createSemaphore();
     const obj = Bluebird.promisifyAll(database) as any;
+
     if (shouldSerialize) {
 
       obj.rollback = (t: Transaction) => {return t.rollback()};
