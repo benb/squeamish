@@ -78,7 +78,12 @@ test('nested transactions', async (t) => {
 test('basic open and read/write', async (t) => {
   const db = await generateArthurDatabase();
   const rows: any[] = await db.allAsync('SELECT * from People;');
+  t.plan(7);
   t.is(rows.length, 6, "Six rows");
+
+  await db.select('SELECT * from People').do(row => {
+    t.truthy(true);
+  }).toPromise();
 });
 
 /*test('stream', async (t) => {*/

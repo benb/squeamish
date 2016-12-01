@@ -47,7 +47,7 @@ export interface Handle {
     getAsync(statement: Statement, ...params: any[]): Promise<any>;
     eachAsync(sql: string, ...params: any[]): Promise<number>;
     eachAsync(statement: Statement, ...params: any[]): Promise<number>;
-    execAsync: (sql: string, ...params: any[]) => Promise<any>;
+    execAsync(sql: string, ...params: any[]): Promise<any>;
     select(sql: string, ...params: any[]): Observable<any>;
     beginTransaction(options?: TransactionOptions): Promise<Transaction>;
 }
@@ -66,8 +66,10 @@ function withinLock<T>(f:() => Promise<T>, semaphore: Semaphore): Promise<T> {
 }
 
 function observableWithinLock<T>(obs: Observable<T>, semaphore: Semaphore) {
-  obs.do({complete: () => {this.semaphore.release()}});
-  return Observable.from(this.semaphore.wait()).concat(obs).skip(1);
+  obs = obs.do({complete: () => {semaphore.release()}});
+  return Observable.create((obs:Observer<T>) => {
+    semaphore.wait().then(() => obs.complete());
+  }).ignoreElements().concat(obs);
 }
 
 function lockF<T>( f:() => ((sql: string, ...params: any[]) => Promise<T>), semaphore: {semaphore: Semaphore}) {
@@ -91,7 +93,7 @@ export class Database implements Handle {
         if (e){observer.error(e)}
         else {observer.next(r)}
       };
-      this._eachAsync(sql, f, params)
+      this._eachAsync(sql, f, ...params)
           .then(n => observer.complete());
     });
   }
