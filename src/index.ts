@@ -3,28 +3,50 @@ import * as Bluebird from 'bluebird';
 import * as uuid from 'uuid';
 import { Semaphore } from 'prex';
 import { Observable, Observer } from '@reactivex/rxjs';
+const debug = false;
 
-export declare class Statement extends sqlite.Statement {
-  public bindAsync(params: any): Promise<void>;
+export class Statement {
+  stmt: sqlite.Statement;
 
-  public eachAsync(params: any, callback: (err: Error, row: any) => void): Promise<number>;
-  public eachAsync(callback?: (err: Error, row: any) => void): Promise<number>;
+  constructor(stmt: sqlite.Statement) {
+    this.stmt = stmt;
+  }
 
-  public resetAsync(): Promise<void>;
+  public bindAsync(...params: any[]): Promise<Statement> {
+    return new Promise((resolve, reject) => {
+      this.stmt.bind(...params, (err: Error) => {
+        if (err) {reject(err)} else {resolve(this)} 
+      });
+    });
+  }
 
-  public finalizeAsync(): Promise<void>;
+  public resetAsync(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.stmt.reset(err => {
+        if (err) {reject(err)} else {resolve()}
+      });
+    });
+  }
 
-  public runAsync(params?: any): Promise<Statement>;
-
-  public getAsync(params?: any): Promise<any>;
+  public finalizeAsync(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.stmt.finalize(err => {
+        if (err) {reject(err)} else {resolve()}
+      });
+    });
+  }
 
 }
 
 export interface Handle {
-    runAsync: (sql: string, ...params: any[]) => Promise<sqlite.Statement>;
-    allAsync: (sql: string, ...params: any[]) => Promise<any[]>;
-    getAsync: (sql: string, ...params: any[]) => Promise<any>;
-    eachAsync: (sql: string, ...params: any[]) => Promise<number>;
+    runAsync(sql: string, ...params: any[]): Promise<Statement>;
+    runAsync(statement: Statement, ...params: any[]): Promise<Statement>;
+    allAsync(sql: string, ...params: any[]): Promise<any[]>;
+    allAsync(statement: Statement, ...params: any[]): Promise<any[]>;
+    getAsync(sql: string, ...params: any[]): Promise<any>;
+    getAsync(statement: Statement, ...params: any[]): Promise<any>;
+    eachAsync(sql: string, ...params: any[]): Promise<number>;
+    eachAsync(statement: Statement, ...params: any[]): Promise<number>;
     execAsync: (sql: string, ...params: any[]) => Promise<any>;
     select(sql: string, ...params: any[]): Observable<any>;
     beginTransaction(options?: TransactionOptions): Promise<Transaction>;
@@ -63,17 +85,7 @@ export class Database implements Handle {
     this.semaphore = createSemaphore();
   }
  
-  private promisifyF<T>( f:() => ((sql: string, ...params: any[]) => void)) {
-    return (sql: string, ...params: any[]) => {
-      return new Promise<T>((resolve, reject) => {
-        f()(sql, ...[...params, (err: Error, result: T) => {
-          if (err) {reject(err)} else {resolve(result)} 
-        }]);
-      });
-    };
-  }
-
-  _select(sql: string, ...params: any[]) {
+  _select(sql: string | Statement, ...params: any[]) {
     return Observable.create((observer: Observer<any>) =>  {
       const f = (e: Error, r: any) => {
         if (e){observer.error(e)}
@@ -96,55 +108,53 @@ export class Database implements Handle {
     });
  }
 
- _runAsync(sql: string, ...params: any[]): Promise<sqlite.Statement> {
-   return new Promise<sqlite.Statement>((resolve, reject) => {
-     this.sqlite.run(sql, ...[...params, (err: Error, s: sqlite.Statement) => {
-       if (err) {reject(err)} else {resolve(s)} 
-     }]);
+ _runAsync(sql: string | Statement, ...params: any[]): Promise<Statement> {
+   return new Promise<Statement>((resolve, reject) => {
+     const cb = (err: Error, s: sqlite.Statement) => {
+       let statement = sql instanceof Statement ? sql : new Statement(s)
+       if (err) {reject(err)} else {resolve(statement)} 
+     }
+     if (sql instanceof Statement) {
+       sql.stmt.run(...params, cb);
+     } else {
+       this.sqlite.run(sql, ...params, cb);
+     }
    });
  }
- _allAsync(sql: string, ...params: any[]) {
+
+ _allAsync(sql: string | Statement, ...params: any[]) {
    return this._select(sql, ...params).toArray().toPromise();
-   //return new Promise<any[]>((resolve, reject) => {
-     //this.sqlite.all.bind(this.sqlite,sql, ...params)((err: Error, rows: any[]) => {
-       //if (err) {reject(err)} else {resolve(rows)} 
-     //});
-   //});
  }
 
- _getAsync(sql: string, ...params: any[]) {
+ _getAsync(sql: string | Statement, ...params: any[]) {
     return new Promise<any>((resolve, reject) => {
-     this.sqlite.get.bind(this.sqlite,sql, ...params)((err: Error, row: any) => {
+     const cb = (err: Error, row: any) => {
        if (err) {reject(err)} else {resolve(row)} 
-     });
+     };
+     if (sql instanceof Statement) {
+       sql.stmt.get(...params, cb);
+     } else {
+       this.sqlite.get(sql, ...params, cb);
+     }
    });
  }
 
-  public runAsync(sql: string, ...params: any[]) {
-    return withinLock(this._runAsync.bind(this, sql, ...params), this.semaphore);
-  }
-
-  public allAsync(sql: string, ...params: any[]): Promise<any[]> {
-    return withinLock(this._allAsync.bind(this, sql, ...params), this.semaphore);
-  }
-
-  public getAsync(sql: string, ...params: any[]): Promise<any> {
-    return withinLock(this._getAsync.bind(this, sql, ...params), this.semaphore);
-  }
-
-  public prepareAsync:(sql: string, ...params: any[]) => Promise<Statement> = this.promisifyF(() => this.sqlite.prepare.bind(this.sqlite));
-
- _eachAsync(sql: string, callback: (err: Error, row: any) => void, ...params:any[]): Promise<number> {
+ _eachAsync(sql: string | Statement, callback: (err: Error, row: any) => void, ...params:any[]): Promise<number> {
    return new Promise<number>((resolve, reject) => {
-     this.sqlite.each(sql, params, callback, (err: Error, result: number) => {
+     const finalCB = (err: Error, result: number) => {
        if (err) {reject(err)} else {resolve(result)} 
-     });
+     };
+
+     if (sql instanceof Statement) {
+       sql.stmt.each(...params, callback, finalCB);
+     } else {
+       this.sqlite.each(sql, ...params, callback, finalCB);
+     }
    });
  }
 
- public eachAsync = lockF(() => this._eachAsync.bind(this), this);
 
- public _execAsync(sql: string) {
+ _execAsync(sql: string) {
    return new Promise<void>((resolve, reject) => {
      this.sqlite.exec(sql, (err: Error) => {
        if (err) {reject(err)} else {resolve()} 
@@ -152,7 +162,33 @@ export class Database implements Handle {
    });
  }
 
- public execAsync = lockF(() => this._execAsync.bind(this), this);
+  public runAsync(sql: string | Statement, ...params: any[]) {
+    return withinLock(this._runAsync.bind(this, sql, ...params), this.semaphore);
+  }
+
+  public allAsync(sql: string | Statement, ...params: any[]): Promise<any[]> {
+    return withinLock(this._allAsync.bind(this, sql, ...params), this.semaphore);
+  }
+
+  public getAsync(sql: string | Statement, ...params: any[]): Promise<any> {
+    return withinLock(this._getAsync.bind(this, sql, ...params), this.semaphore);
+  }
+
+  public eachAsync(sql: string | Statement, ...params: any[]): Promise<number> {
+    return withinLock(this._eachAsync.bind(this, sql, ...params), this.semaphore);
+  }
+
+  public execAsync(sql: string, ...params: any[]): Promise<any> {
+    return withinLock(this._execAsync.bind(this, sql, ...params), this.semaphore);
+  }
+
+  public prepareAsync(sql: string, ...params: any[]): Promise<Statement> {
+    return new Promise((resolve, reject) => {
+      let stmt = this.sqlite.prepare.bind(this.sqlite, sql, ...params)((err: Error) => {
+        if (err) {reject(err)} else {resolve(new Statement(stmt))}
+      });
+    });
+  }
 
  public beginTransaction(options?: TransactionOptions): Promise<Transaction> {
    return Transaction.begin(this as any, this.semaphore, options);
@@ -161,7 +197,6 @@ export class Database implements Handle {
 
 export type TransactionOptions = {type: "IMMEDIATE" | "DEFERRED" | "EXCLUSIVE" };
 
-const debug = false;
 
 function createSemaphore() {
   const s = new Semaphore(1);
@@ -250,10 +285,10 @@ export class Transaction implements Handle {
     await this.externalSemaphore.release();
   }
 
-  runAsync: (sql: string, ...params: any[]) => Promise<sqlite.Statement>;
-  allAsync: (sql: string, ...params: any[]) => Promise<any[]>;
-  getAsync: (sql: string, ...params: any[]) => Promise<any[]>;
-  eachAsync: (sql: string, ...params: any[]) => Promise<number>;
+  runAsync: (sql: string | Statement, ...params: any[]) => Promise<Statement>;
+  allAsync: (sql: string | Statement, ...params: any[]) => Promise<any[]>;
+  getAsync: (sql: string | Statement, ...params: any[]) => Promise<any[]>;
+  eachAsync: (sql: string | Statement, ...params: any[]) => Promise<number>;
   execAsync: (sql: string, ...params: any[]) => Promise<any>;
 
   select(sql: string, ...params: any[]) {

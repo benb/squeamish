@@ -143,26 +143,38 @@ test('errors', async (t) => {
   t.throws(db.runAsync('INSERT INTO NoTable VALUES ("Jeff", "Smith");'));
 });
 
-/*test('preparedStatements', async (t) => {*/
-  //const db = new Database(':memory:');
+test('preparedStatements', async (t) => {
+  const db = new Database(':memory:');
 
-  //await db.execAsync('CREATE TABLE People (firstname TEXT, lastname TEXT);');
-  //await db.runAsync('INSERT INTO People VALUES ("Jeff", "Smith");');
-  //await db.runAsync('INSERT INTO People VALUES (?, ?);', ["Bart", "Simpson"]);
-  //await db.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Dent");
-  //await db.runAsync('INSERT INTO People VALUES ($firstname, $lastname);', {$firstname: "Bender", $lastname:"Rodríguez"});
+  await db.execAsync('CREATE TABLE People (firstname TEXT, lastname TEXT);');
+  await db.runAsync('INSERT INTO People VALUES ("Jeff", "Smith");');
+  await db.runAsync('INSERT INTO People VALUES (?, ?);', ["Bart", "Simpson"]);
+  await db.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Dent");
+  await db.runAsync('INSERT INTO People VALUES ($firstname, $lastname);', {$firstname: "Bender", $lastname:"Rodríguez"});
 
-  //t.plan(3);
+  t.plan(2 + 6 + 1 + 1);
 
-  //const names = ["Jeff", "Bart", "Arthur", "Bender"];
+  const names = ["Jeff", "Bart", "Arthur", "Bender"];
 
-  //const statement = await db.prepareAsync('SELECT * from People WHERE lastname = ?');
+  const statement = await db.prepareAsync('SELECT * from People WHERE lastname = ?');
 
-  //const num = await statement.eachAsync('Rodríguez', (err: Error, row: any) => {
-    //t.is(err, null, "No error");
-    //t.is(row.lastname, 'Rodríguez', "Row exists");
-  //});
+  let num = await db.eachAsync(statement, (err: Error, row: any) => {
+    t.is(err, null, "No error");
+    t.is(row.lastname, 'Rodríguez', "Row exists");
+  }, 'Rodríguez');
+  t.is(num, 1, "Retrieved one row");
 
-  //t.is(num, 1, "Retrieved one row");
-//});
+  const insertStatement = await db.prepareAsync('INSERT INTO People VALUES (?, ?)');
+  await db.runAsync(insertStatement, 'Adrián', 'Rodríguez');
+  await insertStatement.bindAsync('Simón', 'Rodríguez');
+  await db.runAsync(insertStatement);
+
+  num = await db.eachAsync(statement, (err: Error, row: any) => {
+    t.is(err, null, "No error");
+    t.is(row.lastname, 'Rodríguez', "Row exists");
+  }, 'Rodríguez');
+
+  t.is(num, 3, "Retrieved three rows");
+
+});
 
