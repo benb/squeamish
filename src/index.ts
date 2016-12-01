@@ -61,19 +61,7 @@ export class Database implements Handle {
   constructor(path: string, mode: number = sqlite.OPEN_READWRITE | sqlite.OPEN_CREATE) {
     this.sqlite = new sqlite.Database(path, mode);
     this.semaphore = createSemaphore();
-    this.runAsync = lockF(() => this._runAsync.bind(this), this);
-
-    this._allAsync = this.promisifyF(() => this.sqlite.all.bind(this.sqlite));
-    this.allAsync = lockF(() => this._allAsync.bind(this), this);
-
-    this._getAsync = this.promisifyF(() => this.sqlite.get.bind(this.sqlite));
-    this.getAsync = lockF(() => this._getAsync.bind(this), this);
   }
-    runAsync: (sql: string, ...params: any[]) => Promise<sqlite.Statement>;
-    allAsync: (sql: string, ...params: any[]) => Promise<any[]>;
-    getAsync: (sql: string, ...params: any[]) => Promise<any>;
-    _allAsync: (sql: string, ...params: any[]) => Promise<any[]>;
-    _getAsync: (sql: string, ...params: any[]) => Promise<any>;
  
   private promisifyF<T>( f:() => ((sql: string, ...params: any[]) => void)) {
     return (sql: string, ...params: any[]) => {
@@ -91,7 +79,7 @@ export class Database implements Handle {
         if (e){observer.error(e)}
         else {observer.next(r)}
       };
-      this.eachAsync(sql, f, params)
+      this._eachAsync(sql, f, params)
           .then(n => observer.complete());
     });
   }
@@ -115,8 +103,36 @@ export class Database implements Handle {
      }]);
    });
  }
+ _allAsync(sql: string, ...params: any[]) {
+   return this._select(sql, ...params).toArray().toPromise();
+   //return new Promise<any[]>((resolve, reject) => {
+     //this.sqlite.all.bind(this.sqlite,sql, ...params)((err: Error, rows: any[]) => {
+       //if (err) {reject(err)} else {resolve(rows)} 
+     //});
+   //});
+ }
 
- public prepareAsync:(sql: string, ...params: any[]) => Promise<Statement> = this.promisifyF(() => this.sqlite.prepare.bind(this.sqlite));
+ _getAsync(sql: string, ...params: any[]) {
+    return new Promise<any>((resolve, reject) => {
+     this.sqlite.get.bind(this.sqlite,sql, ...params)((err: Error, row: any) => {
+       if (err) {reject(err)} else {resolve(row)} 
+     });
+   });
+ }
+
+  public runAsync(sql: string, ...params: any[]) {
+    return withinLock(this._runAsync.bind(this, sql, ...params), this.semaphore);
+  }
+
+  public allAsync(sql: string, ...params: any[]): Promise<any[]> {
+    return withinLock(this._allAsync.bind(this, sql, ...params), this.semaphore);
+  }
+
+  public getAsync(sql: string, ...params: any[]): Promise<any> {
+    return withinLock(this._getAsync.bind(this, sql, ...params), this.semaphore);
+  }
+
+  public prepareAsync:(sql: string, ...params: any[]) => Promise<Statement> = this.promisifyF(() => this.sqlite.prepare.bind(this.sqlite));
 
  _eachAsync(sql: string, callback: (err: Error, row: any) => void, ...params:any[]): Promise<number> {
    return new Promise<number>((resolve, reject) => {
@@ -145,8 +161,23 @@ export class Database implements Handle {
 
 export type TransactionOptions = {type: "IMMEDIATE" | "DEFERRED" | "EXCLUSIVE" };
 
+const debug = false;
+
 function createSemaphore() {
-  return new Semaphore(1);
+  const s = new Semaphore(1);
+  if (debug) {
+    const wait = s.wait;
+    s.wait = async () => {
+      console.trace("ACQUIRING SEMAPHORE LOCK");
+      let cancelT = false;
+      setTimeout(() => {
+        if (!cancelT) {console.log("SEMAPHORE BLOCKED?");}
+      }, 2000);
+      await wait.bind(s)();
+      cancelT = true;
+    }
+  }
+  return s;
 }
 
 export class Transaction implements Handle {
