@@ -183,3 +183,8 @@ test('preparedStatements', async (t) => {
 
 });
 
+test('select() completes with zero results', async t => {
+  const db = await generateArthurDatabase();
+  const results = await db.select('SELECT * from People WHERE lastname = "Incognito"').toArray().toPromise();
+  t.is(results.length, 0, "Should finish with 0 results");
+});
