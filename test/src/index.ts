@@ -188,3 +188,8 @@ test('select() completes with zero results', async t => {
   const results = await db.select('SELECT * from People WHERE lastname = "Incognito"').toArray().toPromise();
   t.is(results.length, 0, "Should finish with 0 results");
 });
+
+test('select() completes with bogus query', async t => {
+  const db = await generateArthurDatabase();
+  t.throws(db.select('SELECT * from People WHERE json_extract(lastname, "$.last") = "Incognito"').toArray().toPromise());
+});
