@@ -196,4 +196,5 @@ test('select() completes with bogus query', async t => {
   const tr = await db.beginTransaction();
   t.throws(tr.select('SELECT * from People WHERE json_extract(lastname, "$.last") = "Incognito"').toArray().toPromise());
   t.throws(tr.select('SELECT * from People WHERE json_extract(lastname, "$.last") = "Incognito"').toArray().toPromise());
+  t.throws(tr.select('NONSENSE QUERY').toArray().toPromise());
 });

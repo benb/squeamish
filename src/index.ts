@@ -66,10 +66,19 @@ function withinLock<T>(f:() => Promise<T>, semaphore: Semaphore): Promise<T> {
 }
 
 function observableWithinLock<T>(obs: Observable<T>, semaphore: Semaphore) {
-  obs = obs.do({error: () => {semaphore.release()}, complete: () => {semaphore.release()}});
-  return Observable.create((obs:Observer<T>) => {
-    semaphore.wait().then(() => obs.complete());
-  }).ignoreElements().concat(obs);
+  obs = obs.do({
+    error: () => {
+      semaphore.release()
+    },
+    complete: () => {
+      semaphore.release()}
+  });
+  return Observable
+    .create((waiter:Observer<T>) => {
+      semaphore.wait().then(() => {waiter.complete()});
+    })
+    .ignoreElements()
+    .concat(obs);
 }
 
 function lockF<T>( f:() => ((sql: string, ...params: any[]) => Promise<T>), semaphore: {semaphore: Semaphore}) {
@@ -94,7 +103,8 @@ export class Database implements Handle {
         else {observer.next(r)}
       };
       this._eachAsync(sql, f, ...params)
-          .then(n => observer.complete());
+          .then(n => observer.complete())
+          .catch(err => observer.error(err));
     });
   }
 
