@@ -66,7 +66,7 @@ function withinLock<T>(f:() => Promise<T>, semaphore: Semaphore): Promise<T> {
 }
 
 function observableWithinLock<T>(obs: Observable<T>, semaphore: Semaphore) {
-  obs = obs.do({complete: () => {semaphore.release()}});
+  obs = obs.do({error: () => {semaphore.release()}, complete: () => {semaphore.release()}});
   return Observable.create((obs:Observer<T>) => {
     semaphore.wait().then(() => obs.complete());
   }).ignoreElements().concat(obs);
