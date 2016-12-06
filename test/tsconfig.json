@@ -9,6 +9,6 @@
         "outDir": "dist"
     }, 
     "filesGlob": [
-      "src/*.ts"
+      "src/unit/*.ts"
     ]
 }

@@ -1,28 +1,11 @@
-import { Database, TransactionOptions } from '../../';
+import { Database, TransactionOptions } from '../../../';
 import temp = require('temp');
 import { test } from 'ava';
 import * as path from 'path';
 import * as fse from 'fs-extra-promise';
 import _ = require('highland');
+import { generateArthurDatabase } from '../common/index';
 temp.track();
-
-async function generateArthurDatabase(): Promise<Database> {
-  const db = new Database(':memory:');
-
-  const t = await db.beginTransaction();
-
-  await t.execAsync('CREATE TABLE People (firstname TEXT, lastname TEXT);');
-  await t.runAsync('INSERT INTO People VALUES ("Jeff", "Smith");');
-  await t.runAsync('INSERT INTO People VALUES (?, ?);', "Bart", "Simpson");
-  await t.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Dent");
-  await t.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Smith");
-  await t.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Lowe");
-  await t.runAsync('INSERT INTO People VALUES ($firstname, $lastname);', {$firstname: "Bender", $lastname:"Rodríguez"});
-
-  await t.commit();
-
-  return db;
-}
 
 const transactionOptions:(TransactionOptions | undefined)[] = [{type: "IMMEDIATE"}, {type: "DEFERRED"}, {type: "EXCLUSIVE"}, undefined];
 
@@ -86,39 +69,6 @@ test('basic open and read/write', async (t) => {
   }).toPromise();
 });
 
-/*test('stream', async (t) => {*/
-  //const db = await generateArthurDatabase();
-  //const rows = db.eachStream('SELECT * from People where firstname is ?;', "Arthur");
-
-  //t.plan(4);
-  //await new Promise( (resolve, reject) => {
-    //rows.on('data', (row: any) => {
-      //t.is(row.firstname, "Arthur", "Should get an Arthur");
-    //});
-
-    //rows.on('error', (err: Error) => {
-      //reject(err);
-    //});
-
-    //rows.on('end', () => {
-      //t.truthy(true, "Finished");
-      //resolve();
-    //});
-  //});
-//});
-
-/*test('highland', async (t) => {*/
-  //const db = await generateArthurDatabase();
-  //const rows = db.eachStream('SELECT * from People where firstname is ?;', "Arthur");
-  //t.plan(3);
-  //await new Promise( (resolve, reject) => {
-    //_(rows).map((row: any) => {
-      //t.is(row.firstname, "Arthur", "Should get an Arthur");
-      //return row;
-    //}).toArray(resolve);
-  //});
-//});
-
 test('eachAsync', async (t) => {
   const db = await generateArthurDatabase();
   const numRows = 6;
@@ -181,20 +131,4 @@ test('preparedStatements', async (t) => {
 
   t.is(num, 3, "Retrieved three rows");
 
-});
-
-test('select() completes with zero results', async t => {
-  const db = await generateArthurDatabase();
-  let results = await db.select('SELECT * from People WHERE lastname = "Incognito"').toArray().toPromise();
-  t.is(results.length, 0, "Should finish with 0 results");
-  results = await db.select('SELECT * from People WHERE lastname = "Incognito"').toArray().toPromise();
-  t.is(results.length, 0, "Should finish with 0 results");
-});
-
-test('select() completes with bogus query', async t => {
-  const db = await generateArthurDatabase();
-  const tr = await db.beginTransaction();
-  t.throws(tr.select('SELECT * from People WHERE json_extract(lastname, "$.last") = "Incognito"').toArray().toPromise());
-  t.throws(tr.select('SELECT * from People WHERE json_extract(lastname, "$.last") = "Incognito"').toArray().toPromise());
-  t.throws(tr.select('NONSENSE QUERY').toArray().toPromise());
 });
