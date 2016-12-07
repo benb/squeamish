@@ -17,7 +17,7 @@ test('select() completes with zero results', async t => {
 test('select() completes with bogus query', async t => {
   const db = await generateArthurDatabase();
   const tr = await db.beginTransaction();
-  t.throws(tr.select('SELECT * from People WHERE json_extract(lastname, "$.last") = "Incognito"').toArray().toPromise());
-  t.throws(tr.select('SELECT * from People WHERE json_extract(lastname, "$.last") = "Incognito"').toArray().toPromise());
-  t.throws(tr.select('NONSENSE QUERY').toArray().toPromise());
+  t.throws(tr.select('SELECT * from People WHERE bogus = "Incognito"').toArray().toPromise(), () => true, "First throw should work");
+  t.throws(tr.select('SELECT * from People WHERE bogus = "Incognito"').toArray().toPromise(), () => true, "Shouldn't block a second throw");
+  t.throws(tr.select('NONSENSE QUERY').toArray().toPromise(), () => true, "Random garbage should also throw");
 });
