@@ -1,8 +1,9 @@
 ## Squeamish
 
-A minimal wrapper around the sqlite3 module to provide basic TypeScript and
-Promise (async/await) support. It also includes support for transactions and
-RxJS Observables. Of course, it works with plain old JavaScript too!
+A minimal wrapper around the node [sqlite3 module](https://github.com/mapbox/node-sqlite3/)
+to provide basic TypeScript and Promise (async/await) support. It also includes
+support for transactions and RxJS Observables. Of course, it works with plain
+old JavaScript too!
 
 ## Transactions
 
@@ -17,7 +18,7 @@ until the transaction is closed. It also supports nested transactions using the
 ## Basic Usage
 
 Promisification follows the convention of `Bluebird.promisifyAll`, so the API
-follows the standard sqlite3 module, with `Async` appended to method names and
+follows the [standard sqlite3 module](https://github.com/mapbox/node-sqlite3/wiki/API), with `Async` appended to method names and
 the final callback removed. 
 Note that prepared statement usage is different, see the example below:
 
