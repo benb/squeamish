@@ -30,13 +30,13 @@ import { Database, Statement } from 'squeamish';
 async function testDB() {
   const db = new Database(':memory:');
 
-  await db.execAsync('CREATE TABLE People (firstname TEXT, lastname TEXT);');
+  await db.execAsync('CREATE TABLE people (firstname TEXT, lastname TEXT);');
 
-  await db.runAsync('INSERT INTO People VALUES ("Jeff", "Smith");');
-  await db.runAsync('INSERT INTO People VALUES (?, ?);', ["Bart", "Simpson"]);
-  await db.runAsync('INSERT INTO People VALUES (?, ?);', "Arthur", "Dent");
+  await db.runAsync('INSERT INTO people VALUES ("Jeff", "Smith");');
+  await db.runAsync('INSERT INTO people VALUES (?, ?);', ["Bart", "Simpson"]);
+  await db.runAsync('INSERT INTO people VALUES (?, ?);', "Arthur", "Dent");
 
-  const statement = await db.prepareAsync('SELECT * from People;');
+  const statement = await db.prepareAsync('SELECT * from people;');
 
   // Unlike the sqlite3 module, statements are passed to the db handle
   // (or transaction)
@@ -49,7 +49,7 @@ async function testDB() {
   // Transactions:
   const t = await db.beginTransaction();
   // Use the tranaction like a DB connection
-  await t.runAsync('INSERT INTO People VALUES ("Fred", "Flintstone");');
+  await t.runAsync('INSERT INTO people VALUES ("Fred", "Flintstone");');
 
   // Note that await db.runAsync('...'); will block while the transaction is open
   // You are able to open additional Database() objects however and use those.
@@ -68,7 +68,7 @@ async function testDB() {
 
   // RxJS 5 Observable support
 
-  await db.select('SELECT firstname from People')
+  await db.select('SELECT firstname from people')
     .map(x => x.firstname)
     .map(name => "Hi, my name is " + name)
     .do(console.log)
