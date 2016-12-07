@@ -16,10 +16,12 @@ until the transaction is closed. It also supports nested transactions using the
 
 ## Basic Usage
 
-Promisification follows the convention of Bluebird, so the API follows the standard sqlite3 module, with `Async` appended to method names and the final callback removed.
-Note that the Statement object you get from prepareAsync will also be promisified; the one from prepare() will not.
+Promisification follows the convention of `Bluebird.promisifyAll`, so the API
+follows the standard sqlite3 module, with `Async` appended to method names and
+the final callback removed. 
+Note that prepared statement usage is different, see the example below:
 
-Example usage:
+## Example
 
 ```typescript
 import { Database, Statement } from 'squeamish';
