@@ -87,32 +87,52 @@ async function testDB() {
 
   // Transactions:
   const t = await db.beginTransaction();
-  // Use the tranaction like a DB connection
-  await t.runAsync('INSERT INTO people VALUES ("Fred", "Flintstone");');
+  try {
+    // Use the tranaction like a DB connection
+    await t.runAsync('INSERT INTO people VALUES ("Fred", "Flintstone");');
 
-  // Note that await db.runAsync('...'); here would block while the transaction is open
-  //
-  // This means you would deadlock on await db.runAsync or the like if the statement 
-  // that closes the transaction is further down the current function. 
-  // However, it is safe await on db.* if another function asynchronously closes
-  // the transaction (i.e. the case where the transaction was opened async elsewhere).
-  //
-  // You are able to open additional Database() objects however and those
-  // will not block. (Of course SQLite itself  may emit an Error if there is an
-  // exclusive lock or you are not using WAL, for instance).
+    // Note that await db.runAsync('...'); here would block while the transaction is open
+    //
+    // This means you would deadlock on await db.runAsync or other database
+    // blocking function if the statement that closes the transaction is
+    // further down the current function.  However, it is safe to await on db.*
+    // if another function asynchronously closes the transaction (i.e. the case
+    // where the transaction was opened async elsewhere).
+    //
+    // You are able to open additional Database() objects however and those
+    // will not block. (Of course SQLite itself  may emit an Error if there is an
+    // exclusive lock or you are not using WAL, for instance).
 
+    // Nesting transactions:
 
-  // Nesting transactions
+    const t2 = await t.beginTransaction();
+    try {
+      await t2.runAsync('INSERT INTO people VALUES ("Betty", "Rubble");');
 
-  const t2 = await t.beginTransaction();
-  numRows = await t2.eachAsync(statement, (err, row) => {
-    console.log("Person is", row.firstname, row.lastname);
-  });
+      numRows = await t2.eachAsync(statement, (err, row) => {
+        console.log("Person is", row.firstname, row.lastname);
+      });
 
-  console.log("There are now", numRows, "people");
+      console.log("There are now", numRows, "people");
 
-  await t2.commit(); //OR rollback();
-  await t.commit();
+      await t2.commit();
+    } catch(error) {
+
+      console.error(error);
+      await t2.rollback();
+    }
+    const insertStmt= await db.prepareAsync('INSERT INTO people VALUES (?, ?)');
+    await insertStmt.bindAsync('Wilma', 'Flintstone');
+    await t.runAsync(insertStmt);
+
+    const finalCount = await t.getAsync('SELECT COUNT(*) AS count FROM people');
+    console.log("There are now", finalCount.count, "people");
+
+    await t.commit();
+  } catch(error) {
+    console.error(error);
+    await t.rollback();
+  }
 
   // RxJS 5 Observable support
 
