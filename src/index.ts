@@ -299,7 +299,7 @@ export class Transaction implements Handle {
 
   runAsync: (sql: string | Statement, ...params: any[]) => Promise<Statement>;
   allAsync: (sql: string | Statement, ...params: any[]) => Promise<any[]>;
-  getAsync: (sql: string | Statement, ...params: any[]) => Promise<any[]>;
+  getAsync: (sql: string | Statement, ...params: any[]) => Promise<any>;
   eachAsync: (sql: string | Statement, ...params: any[]) => Promise<number>;
   execAsync: (sql: string, ...params: any[]) => Promise<any>;
 
