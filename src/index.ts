@@ -2,7 +2,7 @@ import * as sqlite from 'sqlite3';
 import * as Bluebird from 'bluebird';
 import * as uuid from 'uuid';
 import { Semaphore } from 'prex';
-import { Observable, Observer } from '@reactivex/rxjs';
+import { Observable, Observer } from 'rxjs';
 const debug = false;
 
 export class Statement {
