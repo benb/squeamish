@@ -22,7 +22,7 @@
   "devDependencies": {
     "@types/fs-extra-promise": "0.0.30",
     "@types/temp": "^0.8.29",
-    "ava": "^0.16.0",
+    "ava": "^0.17.0",
     "fs-extra-promise": "^0.4.1",
     "temp": "^0.8.3",
     "typescript": "^2.0.3"
