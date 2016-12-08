@@ -15,6 +15,45 @@ the transaction for your queries to execute on, and locks the original handle
 until the transaction is closed. It also supports nested transactions using the
 `SAVEPOINT` syntax.
 
+The upshot of this is that while a transaction `t` is open, promises on the outer
+database object (or outer tranasction) will not return. If you are expecting them
+to return before you progress to commit `t`, you will deadlock. It is safe to await 
+on them from another function, however. So:
+
+```typescript
+
+//WILL DEADLOCK:
+async function f(db: Database) {
+  const t = db.beginTransaction()
+
+  //This next line will block:
+  const items = await db.allAsync('SELECT…');
+  await t.runAsync('INSERT…);
+
+  //Because it won't return until this line is executed:
+  await t.commit();
+}
+
+//WON'T DEADLOCK:
+async function f1(db: Database) {
+  const t = db.beginTransaction()
+  await t.runAsync('INSERT…);
+  await t.commit();
+}
+
+async function f2(db: Database) {
+  return db.allAsync('SELECT *…');
+}
+
+async function f(db: Database) {
+  f1(db);
+  // f2() will probably try allAsync() while the transaction is open
+  // it is safe to do so but will wait for it to close first.
+  // If you don't want to wait, use multiple Database objects.
+  const items = await f2(db);
+}
+```
+
 ## Basic Usage
 
 Promisification follows the convention of `Bluebird.promisifyAll`, so the API
@@ -51,8 +90,17 @@ async function testDB() {
   // Use the tranaction like a DB connection
   await t.runAsync('INSERT INTO people VALUES ("Fred", "Flintstone");');
 
-  // Note that await db.runAsync('...'); will block while the transaction is open
-  // You are able to open additional Database() objects however and use those.
+  // Note that await db.runAsync('...'); here would block while the transaction is open
+  //
+  // This means you would deadlock on await db.runAsync or the like if the statement 
+  // that closes the transaction is further down the current function. 
+  // However, it is safe await on db.* if another function asynchronously closes
+  // the transaction (i.e. the case where the transaction was opened async elsewhere).
+  //
+  // You are able to open additional Database() objects however and those
+  // will not block. (Of course SQLite itself  may emit an Error if there is an
+  // exclusive lock or you are not using WAL, for instance).
+
 
   // Nesting transactions
 
