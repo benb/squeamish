@@ -1,6 +1,8 @@
 import { Database, TransactionOptions } from '../../../';
 import { test } from 'ava';
+import * as path from 'path';
 import { generateArthurDatabase } from '../common/index';
+
 
 test('Don\'t deadlock on await', async t => {
   const db = await generateArthurDatabase();
@@ -13,3 +15,4 @@ test('Don\'t deadlock on await', async t => {
   const people = await db.allAsync('SELECT * FROM People');
   t.is(people.length, 7, "Completed in order, without deadlocking");
 });
+

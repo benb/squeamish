@@ -1,8 +1,8 @@
 import { Database, TransactionOptions } from '../../../';
 import test from 'ava';
 
-export async function generateArthurDatabase(): Promise<Database> {
-  const db = new Database(':memory:');
+export async function generateArthurDatabase(filePath = ':memory:'): Promise<Database> {
+  const db = new Database(filePath);
 
   const t = await db.beginTransaction();
 

@@ -5,6 +5,45 @@ import { Semaphore } from 'prex';
 import { Observable, Observer } from 'rxjs';
 const debug = false;
 
+type ResolveFunction<T> = (result:T) => void;
+type VoidResolveFunction = () => void;
+type RejectFunction = (error:any) => void;
+
+type PromiseFunction<T> = (resolve: ResolveFunction<T>, reject: RejectFunction) => void;
+type VoidPromiseFunction = (resolve: VoidResolveFunction, reject: RejectFunction) => void;
+
+function waitPromise(time: number) {
+  return new Promise((resolve, reject) => {
+    setTimeout(resolve, time);
+  });
+}
+
+
+// retryTimeLimit of 30000ms is about 12 cycles taking just over a minute.
+// if the database is still locked, then we fail
+function handleBusy<T>(f: PromiseFunction<T>, retryTime = 200, retryTimeLimit = 30000) {
+   return new Promise<T>((resolve, reject) => {
+    f(resolve, (err: any) => {
+      if (err.errno == 5 && retryTime < retryTimeLimit) {
+        return waitPromise(retryTime).then(() => handleBusy<T>(f, retryTime * 1.5));
+      }
+      reject(err);
+    });
+  });
+}
+
+// I gave up fighting the type system and defined a special version for void promises:
+function handleBusyVoid(f: VoidPromiseFunction, retryTime = 200, retryTimeLimit = 30000) {
+   return new Promise<void>((resolve, reject) => {
+    f(resolve, (err: any) => {
+      if (err.errno == 5 && retryTime < retryTimeLimit) {
+        return waitPromise(retryTime).then(() => handleBusyVoid(f, retryTime * 1.5));
+      }
+      reject(err);
+    });
+  });
+}
+
 export class Statement {
   stmt: sqlite.Statement;
 
@@ -13,7 +52,7 @@ export class Statement {
   }
 
   public bindAsync(...params: any[]): Promise<Statement> {
-    return new Promise((resolve, reject) => {
+    return handleBusy<Statement>((resolve, reject) => {
       this.stmt.bind(...params, (err: Error) => {
         if (err) {reject(err)} else {resolve(this)} 
       });
@@ -21,7 +60,7 @@ export class Statement {
   }
 
   public resetAsync(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
+    return handleBusyVoid((resolve, reject) => {
       this.stmt.reset(err => {
         if (err) {reject(err)} else {resolve()}
       });
@@ -29,7 +68,7 @@ export class Statement {
   }
 
   public finalizeAsync(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
+    return handleBusyVoid((resolve, reject) => {
       this.stmt.finalize(err => {
         if (err) {reject(err)} else {resolve()}
       });
@@ -113,7 +152,7 @@ export class Database implements Handle {
   }
 
   public closeAsync():Promise<void> {
-    return new Promise<void>((resolve, reject) => {
+    return handleBusyVoid((resolve, reject) => {
       this.sqlite.close((err: Error) => {
         if (err) {reject(err);} else {resolve();}
       });
@@ -121,7 +160,7 @@ export class Database implements Handle {
  }
 
  _runAsync(sql: string | Statement, ...params: any[]): Promise<Statement> {
-   return new Promise<Statement>((resolve, reject) => {
+   return handleBusy<Statement>((resolve, reject) => {
      const cb = (err: Error, s: sqlite.Statement) => {
        let statement = sql instanceof Statement ? sql : new Statement(s)
        if (err) {reject(err)} else {resolve(statement)} 
@@ -139,7 +178,7 @@ export class Database implements Handle {
  }
 
  _getAsync(sql: string | Statement, ...params: any[]) {
-    return new Promise<any>((resolve, reject) => {
+    return handleBusy<any>((resolve, reject) => {
      const cb = (err: Error, row: any) => {
        if (err) {reject(err)} else {resolve(row)} 
      };
@@ -152,7 +191,7 @@ export class Database implements Handle {
  }
 
  _eachAsync(sql: string | Statement, callback: (err: Error, row: any) => void, ...params:any[]): Promise<number> {
-   return new Promise<number>((resolve, reject) => {
+   return handleBusy<number>((resolve, reject) => {
      const finalCB = (err: Error, result: number) => {
        if (err) {reject(err)} else {resolve(result)} 
      };
@@ -167,7 +206,7 @@ export class Database implements Handle {
 
 
  _execAsync(sql: string) {
-   return new Promise<void>((resolve, reject) => {
+   return handleBusyVoid((resolve, reject) => {
      this.sqlite.exec(sql, (err: Error) => {
        if (err) {reject(err)} else {resolve()} 
      });
