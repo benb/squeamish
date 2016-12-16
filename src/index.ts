@@ -18,13 +18,13 @@ function waitPromise(time: number) {
   });
 }
 
-
+const SQLITE_BUSY = 5
 // retryTimeLimit of 30000ms is about 12 cycles taking just over a minute.
 // if the database is still locked, then we fail
 function handleBusy<T>(f: PromiseFunction<T>, retryTime = 200, retryTimeLimit = 30000) {
    return new Promise<T>((resolve, reject) => {
     f(resolve, (err: any) => {
-      if (err.errno == 5 && retryTime < retryTimeLimit) {
+      if (err.errno == SQLITE_BUSY && retryTime < retryTimeLimit) {
         return waitPromise(retryTime).then(() => handleBusy<T>(f, retryTime * 1.5));
       }
       reject(err);
@@ -36,7 +36,7 @@ function handleBusy<T>(f: PromiseFunction<T>, retryTime = 200, retryTimeLimit = 
 function handleBusyVoid(f: VoidPromiseFunction, retryTime = 200, retryTimeLimit = 30000) {
    return new Promise<void>((resolve, reject) => {
     f(resolve, (err: any) => {
-      if (err.errno == 5 && retryTime < retryTimeLimit) {
+      if (err.errno == SQLITE_BUSY && retryTime < retryTimeLimit) {
         return waitPromise(retryTime).then(() => handleBusyVoid(f, retryTime * 1.5));
       }
       reject(err);
