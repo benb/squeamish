@@ -3,7 +3,6 @@ import temp = require('temp');
 import { test } from 'ava';
 import * as path from 'path';
 import * as fse from 'fs-extra-promise';
-import _ = require('highland');
 import { generateArthurDatabase } from '../common/index';
 temp.track();
 
